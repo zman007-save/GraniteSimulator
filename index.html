@@ -57,7 +57,7 @@ canvas#cut.sketching{cursor:crosshair;box-shadow:0 0 0 2px var(--gold) inset}
 #piece .legs{position:absolute;left:50%;top:45%;transform:translateX(-50%);display:flex;justify-content:center;gap:0;z-index:0}
 #piece .legs i{display:block;height:var(--leg-h,70px);border-radius:3px}
 #piece img{position:relative;z-index:1;display:block;width:100%;transform:perspective(700px) rotateX(58deg);transform-origin:50% 60%;filter:drop-shadow(0 18px 14px #0006)}
-.upload{display:inline-block;background:#2a2d31;color:var(--text);padding:12px 16px;border-radius:12px;font-weight:650;cursor:pointer}
+.upload{display:inline-block;background:#2a2d31;color:var(--text);padding:12px 16px;border-radius:12px;font-weight:650;cursor:pointer}.upload.primary{background:var(--gold);color:#171717}#room{transition:height .3s}
 #cameraStage{display:none;position:relative;margin-top:12px;overflow:hidden;border-radius:18px;background:#111;aspect-ratio:4/3}
 #cameraStage video{width:100%;height:100%;object-fit:cover}
 #arPiece{position:absolute;left:50%;top:60%;width:50%;transform:translate(-50%,-50%) perspective(700px) rotateX(55deg);touch-action:none;cursor:grab;filter:drop-shadow(0 18px 14px #0009)}
@@ -140,21 +140,22 @@ table.price tr.total td{border:0;padding-top:12px;font-size:20px;font-weight:650
 
   <section class="panel" id="s3">
     <div class="step"><b>03</b><h2>See it in your space</h2></div>
-    <p style="margin-top:0">Drag the piece to move it. Upload a photo of your room for the real feel.</p>
+    <p style="margin-top:0">Snap your room with your phone camera, then drag the piece where it belongs.</p>
+    <div class="row" style="margin-bottom:12px">
+      <label class="upload primary" tabindex="0">📷 Take a photo of your room <input id="roomCamera" type="file" accept="image/*" capture="environment" hidden></label>
+      <label class="upload" tabindex="0">Choose from photos <input id="roomPhoto" type="file" accept="image/*" hidden></label>
+      <button id="camera" class="ghost">Live camera</button>
+    </div>
     <div id="room"><div id="piece"><div class="legs" id="legs"></div><img id="pieceImg" alt="Your stone piece"></div></div>
     <div class="controls">
       <div class="control"><label for="scale">Size in photo <output id="scaleOut">100%</output></label><input id="scale" type="range" min="40" max="180" value="100"></div>
       <div class="control"><label for="rotation">Rotate <output id="rotOut">0°</output></label><input id="rotation" type="range" min="-70" max="70" value="0"></div>
     </div>
     <div class="control" style="margin-top:14px"><label>Base</label><div class="chips" id="bases" role="group" aria-label="Base"></div></div>
-    <div class="row">
-      <label class="upload" tabindex="0">Upload room photo <input id="roomPhoto" type="file" accept="image/*" hidden></label>
-      <button id="roomReset" class="ghost">Reset room</button>
-      <button id="camera" class="ghost">Try camera preview</button>
-    </div>
-    <p class="fine" id="cameraStatus">Camera preview is a simple overlay, not spatially tracked AR.</p>
+    <div class="row"><button id="roomReset" class="ghost">Back to sample room</button></div>
+    <p class="fine" id="cameraStatus">Tip: stand back and hold your phone at table height. Live camera is a simple overlay, not tracked AR.</p>
     <div id="cameraStage"><video id="video" autoplay playsinline muted></video><img id="arPiece" alt=""></div>
-    <button id="stopCamera" class="ghost" style="display:none;margin-top:10px">Close camera</button>
+    <div class="row" id="cameraButtons" style="display:none;margin-top:10px"><button id="snap">📸 Use this view as my room</button><button id="stopCamera" class="ghost">Close camera</button></div>
   </section>
 
   <section class="panel" id="s4">
@@ -477,19 +478,40 @@ piece.addEventListener('pointerdown', e => { pDrag = {x:e.clientX, y:e.clientY, 
 piece.addEventListener('pointermove', e => { if (!pDrag) return; const r = $('room'); piece.style.left = clamp(pDrag.l + e.clientX - pDrag.x, 30, r.clientWidth - 30) + 'px'; piece.style.top = clamp(pDrag.t + e.clientY - pDrag.y, 60, r.clientHeight - 30) + 'px'; });
 piece.addEventListener('pointerup', () => pDrag = null);
 $('scale').oninput = placePiece; $('rotation').oninput = placePiece;
-$('roomPhoto').onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { $('room').style.backgroundImage = `url(${rd.result})`; $('room').classList.add('photo'); }; rd.readAsDataURL(f); };
-$('roomReset').onclick = () => { $('room').style.backgroundImage = ''; $('room').classList.remove('photo'); $('roomPhoto').value = ''; };
-document.querySelector('.upload').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('roomPhoto').click(); } };
+let roomUrl = null;
+function setRoomPhoto(blob) {
+  if (roomUrl) URL.revokeObjectURL(roomUrl);
+  roomUrl = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const room = $('room');
+    // Match the preview to the photo's shape so a portrait iPhone shot isn't cropped away.
+    room.style.height = clamp(room.clientWidth * img.naturalHeight / img.naturalWidth, 260, innerHeight * .75) + 'px';
+    room.style.backgroundImage = `url(${roomUrl})`; room.classList.add('photo');
+    piece.style.left = '50%'; piece.style.top = '72%';
+    room.scrollIntoView({block:'center'});
+  };
+  img.src = roomUrl;
+}
+for (const id of ['roomCamera', 'roomPhoto']) $(id).onchange = e => { const f = e.target.files[0]; if (f) setRoomPhoto(f); e.target.value = ''; };
+$('roomReset').onclick = () => { if (roomUrl) URL.revokeObjectURL(roomUrl); roomUrl = null; const room = $('room'); room.style.backgroundImage = ''; room.style.height = ''; room.classList.remove('photo'); };
+document.querySelectorAll('.upload').forEach(l => l.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); l.querySelector('input').click(); } });
 
 let cameraStream = null;
 $('camera').onclick = async () => {
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
-    $('video').srcObject = cameraStream; $('cameraStage').style.display = 'block'; $('stopCamera').style.display = 'inline-block';
-    $('cameraStatus').textContent = 'Drag the stone to place it. This is an overlay, not tracked AR.';
-  } catch (e) { $('cameraStatus').textContent = 'Camera unavailable: ' + e.message; }
+    $('video').srcObject = cameraStream; $('cameraStage').style.display = 'block'; $('cameraButtons').style.display = 'flex';
+    $('cameraStatus').textContent = 'Drag the stone to place it, or tap “Use this view” to freeze your room.';
+  } catch (e) { $('cameraStatus').textContent = 'Live camera isn’t available here — use “Take a photo of your room” instead.'; }
 };
-$('stopCamera').onclick = () => { cameraStream?.getTracks().forEach(t => t.stop()); cameraStream = null; $('video').srcObject = null; $('cameraStage').style.display = 'none'; $('stopCamera').style.display = 'none'; };
+function stopCamera() { cameraStream?.getTracks().forEach(t => t.stop()); cameraStream = null; $('video').srcObject = null; $('cameraStage').style.display = 'none'; $('cameraButtons').style.display = 'none'; }
+$('stopCamera').onclick = stopCamera;
+$('snap').onclick = () => {
+  const v = $('video'), c = document.createElement('canvas'); if (!v.videoWidth) return;
+  c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+  c.toBlob(b => { if (b) { stopCamera(); setRoomPhoto(b); } }, 'image/jpeg', .9);
+};
 const ar = $('arPiece'); let arDrag = null;
 ar.addEventListener('pointerdown', e => { arDrag = {x:e.clientX, y:e.clientY, l:ar.offsetLeft, t:ar.offsetTop}; ar.setPointerCapture(e.pointerId); });
 ar.addEventListener('pointermove', e => { if (!arDrag) return; const st = $('cameraStage'); ar.style.left = clamp(arDrag.l + e.clientX - arDrag.x, 0, st.clientWidth) + 'px'; ar.style.top = clamp(arDrag.t + e.clientY - arDrag.y, 0, st.clientHeight) + 'px'; });
